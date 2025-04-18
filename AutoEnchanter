@@ -1,0 +1,159 @@
+-- Full Pet Info GUI with Auto Reroll for Roblox
+
+local Players = game:GetService("Players")
+local UserInputService = game:GetService("UserInputService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
+
+local player = Players.LocalPlayer
+
+-- Remote Function for enchanting
+local remoteFunc = ReplicatedStorage:WaitForChild("Shared")
+    :WaitForChild("Framework")
+    :WaitForChild("Network")
+    :WaitForChild("Remote")
+    :WaitForChild("Function")
+
+local currentPetId = nil
+local autoReroll = false
+local useEnchant2 = true
+local allowTeamUpIV = true
+
+-- Create GUI
+local petInfoGui = Instance.new("ScreenGui")
+petInfoGui.Name = "PetInfoGui"
+petInfoGui.ResetOnSpawn = false
+petInfoGui.Parent = player:WaitForChild("PlayerGui")
+
+local frame = Instance.new("Frame")
+frame.Name = "PetInfoFrame"
+frame.Size = UDim2.new(0, 220, 0, 210)
+frame.Position = UDim2.new(0, 50, 0, 50)
+frame.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+frame.Active = true
+frame.Draggable = true
+frame.Parent = petInfoGui
+
+local function createLabel(name, yOffset, defaultText)
+    local lbl = Instance.new("TextLabel")
+    lbl.Name = name
+    lbl.Size = UDim2.new(1, -10, 0, 20)
+    lbl.Position = UDim2.new(0, 5, 0, yOffset)
+    lbl.BackgroundTransparency = 1
+    lbl.TextColor3 = Color3.new(1, 1, 1)
+    lbl.TextXAlignment = Enum.TextXAlignment.Left
+    lbl.Text = defaultText or ""
+    lbl.Parent = frame
+    return lbl
+end
+
+local titleLabel    = createLabel("TitleLabel",    5,  "Pet: Loading...")
+local petIdLabel    = createLabel("PetIdLabel",    30, "ID: -")
+local enchant1Label = createLabel("Enchant1Label", 55, "Enchant1: -")
+local enchant2Label = createLabel("Enchant2Label", 80, "Enchant2: -")
+
+local checkBox = Instance.new("TextButton")
+checkBox.Name = "UseEnchant2Checkbox"
+checkBox.Size = UDim2.new(1, -10, 0, 20)
+checkBox.Position = UDim2.new(0, 5, 0, 105)
+checkBox.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+checkBox.TextColor3 = Color3.new(1, 1, 1)
+checkBox.Text = "✔ Use Enchant2"
+checkBox.Parent = frame
+checkBox.MouseButton1Click:Connect(function()
+    useEnchant2 = not useEnchant2
+    checkBox.Text = useEnchant2 and "✔ Use Enchant2" or "✖ Use Enchant2"
+end)
+
+local teamUpIVCheck = Instance.new("TextButton")
+teamUpIVCheck.Size = UDim2.new(1, -10, 0, 20)
+teamUpIVCheck.Position = UDim2.new(0, 5, 0, 130)
+teamUpIVCheck.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+teamUpIVCheck.TextColor3 = Color3.new(1, 1, 1)
+teamUpIVCheck.Text = "✔ Allow Team Up IV"
+teamUpIVCheck.Parent = frame
+teamUpIVCheck.MouseButton1Click:Connect(function()
+    allowTeamUpIV = not allowTeamUpIV
+    teamUpIVCheck.Text = allowTeamUpIV and "✔ Allow Team Up IV" or "✖ Allow Team Up IV"
+end)
+
+local rerollBtn = Instance.new("TextButton")
+rerollBtn.Name = "RerollEnchantsButton"
+rerollBtn.Size = UDim2.new(1, -10, 0, 25)
+rerollBtn.Position = UDim2.new(0, 5, 0, 155)
+rerollBtn.BackgroundColor3 = Color3.fromRGB(70, 70, 70)
+rerollBtn.TextColor3 = Color3.new(1, 1, 1)
+rerollBtn.Text = "Start Auto Reroll"
+rerollBtn.Visible = false
+rerollBtn.Parent = frame
+
+local function enchantMatches(text)
+    return text == "⚡ Team Up V" or (allowTeamUpIV and text == "⚡ Team Up IV")
+end
+
+local function startAutoReroll()
+    spawn(function()
+        while autoReroll do
+            if not currentPetId then break end
+            local e1 = enchant1Label.Text:match("Enchant1: (.+)") or ""
+            local e2 = enchant2Label.Text:match("Enchant2: (.+)") or ""
+            if enchantMatches(e1) or (useEnchant2 and enchantMatches(e2)) then
+                autoReroll = false
+                rerollBtn.Text = "Start Auto Reroll"
+                break
+            end
+            pcall(function()
+                remoteFunc:InvokeServer("RerollEnchants", currentPetId)
+            end)
+            task.wait(0.05)
+        end
+    end)
+end
+
+rerollBtn.MouseButton1Click:Connect(function()
+    local e1 = enchant1Label.Text:match("Enchant1: (.+)") or ""
+    local e2 = enchant2Label.Text:match("Enchant2: (.+)") or ""
+    if enchantMatches(e1) or (useEnchant2 and enchantMatches(e2)) then
+        rerollBtn.Text = "Start Auto Reroll"
+        return
+    end
+    autoReroll = not autoReroll
+    rerollBtn.Text = autoReroll and "Stop Auto Reroll" or "Start Auto Reroll"
+    if autoReroll then
+        startAutoReroll()
+    end
+end)
+
+local function updateDisplay()
+    local success, _ = pcall(function()
+        local details = player:WaitForChild("PlayerGui").ScreenGui.Inventory.Frame.Inner.Pets.Details
+        local nameText = details:FindFirstChild("Title") and details.Title.Text or ""
+        local enchant1 = details.Enchants:FindFirstChild("Enchant1") and details.Enchants.Enchant1.Title.Text or ""
+        local enchant2 = details.Enchants:FindFirstChild("Enchant2") and details.Enchants.Enchant2:FindFirstChild("Title") and details.Enchants.Enchant2.Title.Text or ""
+
+        local list = player:WaitForChild("PlayerGui").ScreenGui.Inventory.Frame.Inner.Pets.Main.ScrollingFrame.Team.Main.List
+        local validPet
+        for _, child in pairs(list:GetChildren()) do
+            if child:IsA("Frame") and not child.Name:match("TemplateBlank") then
+                validPet = child
+                break
+            end
+        end
+
+        if nameText ~= "" and enchant1 ~= "" and validPet then
+            local id = validPet.Name:gsub("%-team%-%d+$", "")
+            titleLabel.Text = "Pet: " .. nameText
+            petIdLabel.Text = "ID: " .. id
+            enchant1Label.Text = "Enchant1: " .. enchant1
+            enchant2Label.Text = "Enchant2: " .. enchant2
+            currentPetId = id
+            rerollBtn.Visible = true
+        else
+            rerollBtn.Visible = false
+        end
+    end)
+end
+
+RunService.RenderStepped:Connect(updateDisplay)
+
+print("[PetInfoGUI] Fully loaded.")
