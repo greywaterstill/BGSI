@@ -1,0 +1,167 @@
+task.wait(5)
+local HttpService = game:GetService("HttpService")
+local Players     = game:GetService("Players")
+
+local player  = Players.LocalPlayer
+local placeId = game.PlaceId
+local jobId   = game.JobId or ""
+
+-- Rifts folder
+local RIFTS_FOLDER = workspace:WaitForChild("Rendered"):WaitForChild("Rifts")
+
+-- Configuration: list of webhook endpoints
+-- 'name' here is the rift name to match; use "All Rifts" to match every rift
+local Config = {
+    webhooks = {
+        {
+            name    = "All Rifts",
+            enabled = true,
+            url     = "https://discord.com/api/webhooks/1363303118288457768/AN8gskvqiAYUfsD4CwR-Njmil5UcAUS2aRELoNE7Isurci74u9VgAUJCpjRSJ1C8SzQy",
+        },
+        {
+            name    = "void-egg",
+            enabled = true,
+            url     = "https://discord.com/api/webhooks/1363304420074324112/TpIpaq0EfjOjwvZYh6kxi4IWQnTryymBRe8yHlCSeSGv2m1rlUa91KfMmf2h7Tm3M3LH",
+            lucks   = { "x25" },
+        },
+        {
+            name    = "nightmare-egg",
+            enabled = true,
+            url     = "https://discord.com/api/webhooks/1363304476110491738/QgYQC1h4vNlnPb8mzmpy_Pjyol0-Oh0yGDzlrYMGWHTN6l0H-ZTtkxFbeK6bl-DKHBCF",
+            lucks   = { "x25" },
+        },
+        {
+            name    = "rainbow-egg",
+            enabled = true,
+            url     = "https://discord.com/api/webhooks/1363304683317235893/-s_07jD8pJttYHSQOhfkOirVrSBLnBNksGwDfjKwZYbJrlS_ZlqZTgwZs5RF_TR7Roqa",
+            lucks   = { "x25" },
+        },
+        {
+            name    = "event-1",
+            enabled = true,
+            url     = "https://discord.com/api/webhooks/1363302572978339850/LT8SfJBLiHOsOvg0u7gSSDI7UvroirJNctC3srir_fk1-bEnlmOcDy1QXV0yztn3Sr6Z",
+            lucks   = { "x10", "x25" },
+        },
+        {
+            name    = "event-2",
+            enabled = true,
+            url     = "https://discord.com/api/webhooks/1363302446407090196/fF8hZb3nlTMMvaiuZhM9MSZ6VhG-kPJ9C9tVzPsHHlCb2pQDr5DGgE3sG2z_nqwQbCLh",
+            lucks   = { "x10", "x25" },
+        },
+        {
+            name    = "royal-chest",
+            enabled = true,
+            url     = "https://discord.com/api/webhooks/1363302649876975717/l3BEtdtDVeE_EAL-CMCXBPeaTwuNWH7wgSJWKVyruNKyxay7DK2OMtUXZiFyuow2b7kq",  -- Replace with your actual webhook URL
+            lucks   = {},  -- Empty luck filter, will still send
+        },
+    },
+}
+
+-- Determine HTTP request function
+local requestFn = http_request or request or (syn and syn.request)
+if not requestFn then
+    warn("HTTP request function unavailable; webhooks will not be sent")
+end
+
+-- Helper: extract luck, height, and time left (no overrideTime)
+local function getRiftInfo(r)
+    local luckVal = nil
+    local yPos    = "unknown"
+    local timeLeft = "unknown"
+
+    -- Height (Y position)
+    local part = r.PrimaryPart or r:FindFirstChildWhichIsA("BasePart")
+    if part then
+        yPos = tostring(math.floor(part.Position.Y))
+    end
+
+    -- GUI values
+    local display = r:FindFirstChild("Display")
+    if display then
+        local gui = display:FindFirstChild("SurfaceGui")
+        if gui then
+            -- Luck
+            local icon = gui:FindFirstChild("Icon")
+            if icon then
+                local luck = icon:FindFirstChild("Luck")
+                if luck and luck:IsA("TextLabel") then
+                    luckVal = luck.Text
+                end
+            end
+            -- Timer
+            local timer = gui:FindFirstChild("Timer")
+            if timer and timer:IsA("TextLabel") then
+                timeLeft = timer.Text
+            end
+        end
+    end
+
+    return luckVal, yPos, timeLeft
+end
+
+-- Build embed for a given rift
+local function buildEmbed(r)
+    local luckVal, yPos, timeLeft = getRiftInfo(r)
+    local launchData = string.format("%d/%s", placeId, jobId)
+    local joinLink   = "https://www.roblox.com/games/start?placeId=16302670534&launchData=" .. launchData
+
+    local luckText   = luckVal or "nil"
+    local description = string.format(
+        "Egg luck: **%s**\nLocation = %s\n\nTime Left: %s\n\nJoin server: [Join](%s)",
+        luckText, yPos, timeLeft, joinLink)
+
+    return {
+        title       = r.Name,
+        description = description,
+        color       = nil,
+    }
+end
+
+-- Async send webhook payload
+local function sendWebhookAsync(url, embed)
+    task.spawn(function()
+        if not requestFn then return end
+        local payload = HttpService:JSONEncode({ content = nil, embeds = { embed }, attachments = {} })
+        local headers = { ["content-type"] = "application/json" }
+        local ok, res = pcall(function()
+            return requestFn({ Url = url, Method = "POST", Headers = headers, Body = payload })
+        end)
+        if not ok then
+            warn("Failed to send webhook to "..url..": "..tostring(res))
+        end
+    end)
+end
+
+-- Process only existing rifts once at execution
+for _, r in ipairs(RIFTS_FOLDER:GetChildren()) do
+    local luckVal = getRiftInfo(r)
+    for _, hook in ipairs(Config.webhooks) do
+        if hook.enabled then
+            local matchName =
+               (hook.name == "All Rifts")
+               or (r.Name == hook.name)
+            if matchName then
+                local shouldSend = true
+                -- Only do luck-filtering if the webhook has lucks configured
+                if hook.lucks and #hook.lucks > 0 then
+                    if not luckVal then
+                        shouldSend = false
+                    else
+                        local found = false
+                        for _, allowed in ipairs(hook.lucks) do
+                            if luckVal == allowed then
+                                found = true
+                                break
+                            end
+                        end
+                        shouldSend = found
+                    end
+                end
+
+                if shouldSend then
+                    sendWebhookAsync(hook.url, buildEmbed(r))
+                end
+            end
+        end
+    end
+end
