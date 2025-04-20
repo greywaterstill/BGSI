@@ -132,36 +132,39 @@ local function sendWebhookAsync(url, embed)
     end)
 end
 
--- Process only existing rifts once at execution
-for _, r in ipairs(RIFTS_FOLDER:GetChildren()) do
-    local luckVal = getRiftInfo(r)
-    for _, hook in ipairs(Config.webhooks) do
-        if hook.enabled then
-            local matchName =
-               (hook.name == "All Rifts")
-               or (r.Name == hook.name)
-            if matchName then
-                local shouldSend = true
-                -- Only do luck-filtering if the webhook has lucks configured
-                if hook.lucks and #hook.lucks > 0 then
-                    if not luckVal then
-                        shouldSend = false
-                    else
-                        local found = false
-                        for _, allowed in ipairs(hook.lucks) do
-                            if luckVal == allowed then
-                                found = true
-                                break
+-- Spawn a task to process the rifts and send webhooks asynchronously
+task.spawn(function()
+    -- Process only existing rifts once at execution
+    for _, r in ipairs(RIFTS_FOLDER:GetChildren()) do
+        local luckVal = getRiftInfo(r)
+        for _, hook in ipairs(Config.webhooks) do
+            if hook.enabled then
+                local matchName =
+                   (hook.name == "All Rifts")
+                   or (r.Name == hook.name)
+                if matchName then
+                    local shouldSend = true
+                    -- Only do luck-filtering if the webhook has lucks configured
+                    if hook.lucks and #hook.lucks > 0 then
+                        if not luckVal then
+                            shouldSend = false
+                        else
+                            local found = false
+                            for _, allowed in ipairs(hook.lucks) do
+                                if luckVal == allowed then
+                                    found = true
+                                    break
+                                end
                             end
+                            shouldSend = found
                         end
-                        shouldSend = found
                     end
-                end
 
-                if shouldSend then
-                    sendWebhookAsync(hook.url, buildEmbed(r))
+                    if shouldSend then
+                        sendWebhookAsync(hook.url, buildEmbed(r))
+                    end
                 end
             end
         end
     end
-end
+end)
